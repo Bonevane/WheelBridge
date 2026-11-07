@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Swift and Xcode
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Build output
+build/
+dist/
+*.dmg
+*.dll
+*.exe
+*.o
+*.obj
+
+# Local Claude Code settings
+.claude/settings.local.json
