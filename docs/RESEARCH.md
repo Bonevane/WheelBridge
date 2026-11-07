@@ -109,11 +109,14 @@ symptoms reported to me are worth reproducing once a wheel is attached.
 
 ## Decisions
 
-- **Open source**, MIT licensed. Protocol facts from GPL projects are fine, but
-  their code must not be copied in.
+- **Open source**, Apache 2.0, matching Bridge. Protocol facts from GPL projects
+  are fine, but their code must not be copied in.
 - **G29 first.** It is the hardware available for testing. It has no TrueForce, so
   that work waits until someone with a G923 can test it.
+- **Name: WheelBridge.** It says what the app does, and pairs with Bridge, the
+  same author's phone-to-Mac app.
 - **UI:** native macOS with Liquid Glass, using Blueprint's layout and checklist.
+  All colours are system colours, so the accent follows the user's macOS setting.
 
 ## Recommended architecture
 
@@ -181,13 +184,19 @@ Take the best proven decision from each project.
 ## Licensing
 
 - MIT and BSD-style code (CrossFFB, crossover-ffb, crossover-wheel) can be reused
-  with attribution.
+  in this Apache 2.0 project, keeping their copyright notices.
 - `new-lg4ff` and the TrueForce driver are GPL-2.0. Protocol facts are fine, but
   copying code would make this project GPL.
 - `g29fbb` and the T300RS driver have no licence, so their code cannot be reused.
 - Logitech's SDK DLLs must not be redistributed.
 
 ## Naming
+
+**Chosen: WheelBridge.** On 2026-11-08 `.app` and `.dev` showed no nameservers, and
+no Mac or iPhone app used the name. Two zero-star Windows repositories on GitHub
+use it for a wheel-to-Xbox-controller tool. No trademark search was done.
+
+The earlier candidates below were rejected for not saying what the app does.
 
 About 50 names were checked on 2026-11-08 against GitHub, the App Store and DNS.
 This is not a trademark search. "Open" only means the domain shows no

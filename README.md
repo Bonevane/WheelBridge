@@ -1,6 +1,4 @@
-# Countersteer
-
-*Working title.*
+# WheelBridge
 
 Force feedback and full wheel support for Windows racing games running through
 CrossOver on macOS, starting with the Logitech G29.
@@ -18,4 +16,4 @@ existing tools, and the reasoning behind this design.
 
 ## Licence
 
-[MIT](LICENSE)
+[Apache 2.0](LICENSE), the same as Bridge.
