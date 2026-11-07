@@ -107,6 +107,14 @@ contains its proxy:
 Why any one of these fails for a given person is not established here. The
 symptoms reported to me are worth reproducing once a wheel is attached.
 
+## Decisions
+
+- **Open source**, MIT licensed. Protocol facts from GPL projects are fine, but
+  their code must not be copied in.
+- **G29 first.** It is the hardware available for testing. It has no TrueForce, so
+  that work waits until someone with a G923 can test it.
+- **UI:** native macOS with Liquid Glass, using Blueprint's layout and checklist.
+
 ## Recommended architecture
 
 Take the best proven decision from each project.
@@ -181,25 +189,60 @@ Take the best proven decision from each project.
 
 ## Naming
 
-Checked on 2026-11-08 against GitHub, the Mac App Store, web search and DNS.
-This is not a trademark search, and "no nameservers" does not prove a domain is
-for sale.
+About 50 names were checked on 2026-11-08 against GitHub, the App Store and DNS.
+This is not a trademark search. "Open" only means the domain shows no
+nameservers, which does not prove it is available to register.
 
-| Name | Meaning | Conflicts found | Domains |
-|---|---|---|---|
-| **Countersteer** (recommended) | Steering into a slide. Also a nod to Oversteer, the Linux wheel tool | No app of that name found | `.app` taken, `.dev` shows no nameservers |
-| Slipangle | The tyre physics behind what you feel through the wheel | None found | `.app` taken, `.dev` shows no nameservers |
-| Rumblestrip | Playful, and suits haptics | None found | `.app` taken, `.dev` shows no nameservers |
+**Clean: no Mac or iPhone app found, `.app` and `.dev` both look open**
 
-Rejected:
+| Name | Meaning |
+|---|---|
+| Fullock | Full lock, the wheel turned as far as it goes |
+| Steerlock | The limit of steering, and the range setting |
+| Oppolock | Opposite lock, the rally term for catching a slide |
+| Scandiflick | The rally move that throws a car into a corner |
+| Tyrewall | The barrier at the edge of a track |
+| Kerbstone | The kerb, the feeling force feedback is known for |
+| Halfshaft | The part that carries torque to a wheel |
+| Tierod | The link between the steering rack and the wheel |
+| Rackpin | Short for rack and pinion |
+| Selfalign | Self-aligning torque, the force you feel in a wheel |
+| Latebrake | Braking late into a corner |
+| Apexer | Someone who hits the apex |
+| Understeer | A joke name, and a sibling to Oversteer |
+| Torquey | Informal, and the most playful of the set |
+| Coilover | A suspension part. Only loosely related |
 
-- **CrossWheel** is the existing paid product, so this project must not ship
-  under that name, even though the folder currently uses it.
-- **Anything starting with Cross** gets confused with CrossWheel, CrossFFB and
+**Good, with one domain taken: `.app` taken, `.dev` looks open**
+
+| Name | Meaning | Note |
+|---|---|---|
+| Countersteer | Steering into a slide | Nod to Oversteer, the Linux tool |
+| Rumblestrip | The ridges at a track's edge | Suits haptics |
+| Bitepoint | Where a clutch starts to grip | Also means the moment the bridge connects |
+| Kerbside | Beside the kerb | |
+| Rollcage | The car's safety structure | |
+
+**Usable, but crowded**
+
+| Name | Conflict |
+|---|---|
+| Driveshaft | No app found, both domains taken. The best metaphor: it carries torque between two things |
+| Trailbrake | No app found, both domains taken |
+| Slipangle | iPhone app "Slipangle: Motorcycle Tracker" |
+| Propshaft | Domains look open, but it is a well-known Rails asset library |
+| Gripline | iPhone app of the same name |
+| Parcferme | iPhone app "Parc Ferme" |
+
+**Rejected**
+
+- CrossWheel is the existing paid product, so this project must not ship under
+  that name, even though the folder uses it.
+- Anything starting with Cross gets confused with CrossWheel, CrossFFB and
   CodeWeavers' CrossOver trademark.
-- **Chicane** is an existing iPhone motorsport telemetry app.
-- **Oversteer** is the existing Linux tool.
-- **Kingpin, Scrub, Caster, Pinion, Tarmac, Camber** are crowded or taken.
+- Chicane is an iPhone motorsport telemetry app, and Oversteer is the Linux tool.
+- Pitbox, Flatout, Parabolica, Redline, Stint and Hairpin all clash with existing
+  apps, several of them in motorsport.
 
 ## Before building
 
