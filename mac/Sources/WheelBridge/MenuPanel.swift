@@ -44,7 +44,7 @@ struct MenuPanel: View {
             Checklist(links: model.chain)
             Divider()
             SettingSlider(label: "Force", value: $model.strength, range: 0...100, suffix: "%")
-            SettingSlider(label: "Range", value: $model.rangeDegrees, range: 40...900, step: 10, suffix: "°")
+            SettingSlider(label: "Range", value: $model.rangeDegrees, range: model.rangeLimits, step: 10, suffix: "°")
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Torque").font(.system(size: 13))

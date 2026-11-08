@@ -54,27 +54,35 @@ public final class HIDWheelPort: WheelPort, @unchecked Sendable {
     }
 
     public func send(_ report: [UInt8]) -> Bool {
+        send(OutputReport(report))
+    }
+
+    /// Sends a report with an ID. macOS wants the ID as the first byte too.
+    public func send(_ report: OutputReport) -> Bool {
+        let bytes = report.id == 0 ? report.bytes : [report.id] + report.bytes
         lock.lock()
         let target = device
         lock.unlock()
         guard let target else { return false }
-        let result = report.withUnsafeBufferPointer { bytes -> IOReturn in
-            guard let base = bytes.baseAddress else { return kIOReturnBadArgument }
-            return IOHIDDeviceSetReport(target, kIOHIDReportTypeOutput, 0, base, bytes.count)
+        let result = bytes.withUnsafeBufferPointer { buffer -> IOReturn in
+            guard let base = buffer.baseAddress else { return kIOReturnBadArgument }
+            return IOHIDDeviceSetReport(target, kIOHIDReportTypeOutput, CFIndex(report.id), base, buffer.count)
         }
         return result == kIOReturnSuccess
     }
 
     private func run() {
         let context = Unmanaged.passUnretained(self).toOpaque()
-        let products = WheelModel.supported.map(\.productID) + [WheelModel.compatibilityProductID]
-        let matching = products.map { product -> [String: Int] in
-            [
-                kIOHIDVendorIDKey: WheelModel.logitechVendorID,
-                kIOHIDProductIDKey: product,
-                kIOHIDPrimaryUsagePageKey: 1,
-                kIOHIDPrimaryUsageKey: 4, // joystick: the G29 also has a vendor node to avoid
-            ]
+        // Joystick or game pad nodes only: these wheels also have vendor nodes to avoid.
+        let matching = WheelModel.matchedProductIDs.flatMap { product in
+            [4, 5].map { usage -> [String: Int] in
+                [
+                    kIOHIDVendorIDKey: WheelModel.logitechVendorID,
+                    kIOHIDProductIDKey: product,
+                    kIOHIDPrimaryUsagePageKey: 1,
+                    kIOHIDPrimaryUsageKey: usage,
+                ]
+            }
         }
         IOHIDManagerSetDeviceMatchingMultiple(manager, matching as CFArray)
         IOHIDManagerRegisterDeviceMatchingCallback(manager, { context, _, _, device in
@@ -99,24 +107,32 @@ public final class HIDWheelPort: WheelPort, @unchecked Sendable {
 
     private func attach(_ candidate: IOHIDDevice) {
         let product = IOHIDDeviceGetProperty(candidate, kIOHIDProductIDKey as CFString) as? Int ?? 0
+        let version = IOHIDDeviceGetProperty(candidate, kIOHIDVersionNumberKey as CFString) as? Int ?? 0
+        let arrival = WheelArrival.identify(productID: product, version: version)
+        if arrival == .unknown { return }
         lock.lock()
         device = candidate
         lock.unlock()
 
-        if product == WheelModel.compatibilityProductID {
-            update { $0.state = WB_WHEEL_SWITCHING }
-            for report in LogitechClassicDriver.switchToNative() {
+        switch arrival {
+        case .switchMode(let model, let reports):
+            update {
+                $0.state = WB_WHEEL_SWITCHING
+                $0.model = model
+            }
+            for report in reports {
                 _ = send(report)
             }
-            return // the wheel detaches and comes back with its native ID
-        }
-
-        update {
-            let generation = $0.generation + 1
-            $0 = WheelSnapshot()
-            $0.generation = generation
-            $0.model = WheelModel.model(productID: product)
-            $0.state = $0.model == nil ? WB_WHEEL_MISSING : WB_WHEEL_READY
+        case .ready(let model), .unsupported(let model):
+            update {
+                let generation = $0.generation + 1
+                $0 = WheelSnapshot()
+                $0.generation = generation
+                $0.model = model
+                $0.state = model.isSupported ? WB_WHEEL_READY : WB_WHEEL_UNSUPPORTED
+            }
+        case .unknown:
+            break
         }
     }
 

@@ -30,6 +30,8 @@ final class AppModel: ObservableObject {
 
     private enum Key {
         static let range = "rangeDegrees", strength = "strength", centering = "centering", reverse = "reverse"
+        static let crossOver = "crossOverPath"
+        static let addedPrefixes = "addedPrefixes"
     }
 
     @Published var rangeDegrees: Double { didSet { saveSettings() } }
@@ -46,6 +48,15 @@ final class AppModel: ObservableObject {
     @Published private(set) var torqueHistory = [Double](repeating: 0, count: 240)
     @Published private(set) var busyBottle: String?
     @Published var bottleError: String?
+    @Published private(set) var crossOvers: [CrossOverInstall] = []
+    /// The CrossOver whose dinput8 goes into bottles. Nil when none is found.
+    @Published var crossOver: CrossOverInstall? {
+        didSet {
+            guard preview == nil, crossOver != oldValue else { return }
+            defaults.set(crossOver?.url.path, forKey: Key.crossOver)
+            refreshBottles()
+        }
+    }
 
     private let defaults = UserDefaults.standard
     private var bridge: SharedBridge?
@@ -71,6 +82,7 @@ final class AppModel: ObservableObject {
     }
 
     func start() {
+        refreshCrossOvers()
         refreshBottles()
         if let preview {
             applyPreview(preview)
@@ -162,7 +174,10 @@ final class AppModel: ObservableObject {
         }
         switch wb_wheel_state(rawValue: status.wheel_state) {
         case WB_WHEEL_READY:
-            return ChainLink(name: "Wheel", detail: "G29, USB", state: .good)
+            return ChainLink(name: "Wheel", detail: "\(wheelModel?.name ?? "Wheel"), USB", state: .good)
+        case WB_WHEEL_UNSUPPORTED:
+            return ChainLink(name: "Wheel", detail: "\(wheelModel?.name ?? "Wheel") isn't supported yet", state: .failed,
+                             fix: wheelModel?.unsupportedReason ?? "This wheel isn't supported yet.")
         case WB_WHEEL_SWITCHING:
             return ChainLink(name: "Wheel", detail: "Switching to native mode", state: .waiting)
         case WB_WHEEL_OPEN_FAILED:
@@ -172,6 +187,17 @@ final class AppModel: ObservableObject {
             return ChainLink(name: "Wheel", detail: "Not connected", state: .failed,
                              fix: "Connect the wheel and its power supply.")
         }
+    }
+
+    /// The wheel the helper found, from the USB id it publishes.
+    var wheelModel: WheelModel? {
+        WheelModel.model(productID: Int(input.vendor_product >> 16))
+    }
+
+    /// The range the wheel allows: fixed-range wheels show their one value.
+    var rangeLimits: ClosedRange<Double> {
+        guard let model = wheelModel, model.isSupported else { return 40...900 }
+        return Double(model.minimumRange)...Double(max(model.maximumRange, model.minimumRange + 1))
     }
 
     private var helperLink: ChainLink {
@@ -186,7 +212,7 @@ final class AppModel: ObservableObject {
         if let broken = bottles.first(where: { if case .needsRepair = $0.state { return true } else { return false } }),
            case .needsRepair(let reason) = broken.state {
             return ChainLink(name: "Bottle", detail: "\(broken.bottle.name): repair needed", state: .failed,
-                             fix: "\(reason) Usually caused by a CrossOver update. Repair it in Bottles.")
+                             fix: "\(reason) Usually caused by a CrossOver or Wine update. Repair it in Bottles.")
         }
         if let name = installedBottleName {
             return ChainLink(name: "Bottle", detail: name, state: .good)
@@ -231,15 +257,119 @@ final class AppModel: ObservableObject {
         let proxies = Bundle.main.resourceURL?.appendingPathComponent("proxy")
             ?? URL(fileURLWithPath: "/nonexistent")
         return BottleInstaller(proxy64: proxies.appendingPathComponent("x86_64/dinput8.dll"),
-                               proxy32: proxies.appendingPathComponent("i686/dinput8.dll"))
+                               proxy32: proxies.appendingPathComponent("i686/dinput8.dll"),
+                               crossOverApps: crossOver.map { [$0.url] } ?? [])
+    }
+
+    /// Finds every CrossOver, and keeps the user's choice if it still exists.
+    /// With no choice yet, a CrossOver that is running wins, as it is the one in use.
+    func refreshCrossOvers() {
+        guard preview == nil else { return }
+        let found = CrossOverInstall.detected()
+        var all = found
+        if let current = crossOver, !all.contains(current), current.isUsable { all.append(current) }
+        crossOvers = all
+        if let saved = defaults.string(forKey: Key.crossOver).map({ CrossOverInstall(url: URL(fileURLWithPath: $0)) }),
+           saved.isUsable {
+            if !crossOvers.contains(saved) { crossOvers.append(saved) }
+            crossOver = saved
+            return
+        }
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.codeweavers.CrossOver")
+            .compactMap { $0.bundleURL.map(CrossOverInstall.init) }
+        crossOver = running.first { crossOvers.contains($0) } ?? crossOvers.first
+    }
+
+    /// Lets the user point at a CrossOver that isn't found on its own, such as one
+    /// on an external drive.
+    func chooseCrossOver() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose CrossOver"
+        panel.prompt = "Choose"
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let install = CrossOverInstall(url: url)
+        guard install.isUsable else {
+            bottleError = "\(url.lastPathComponent) isn't a CrossOver that WheelBridge can use."
+            return
+        }
+        if !crossOvers.contains(install) { crossOvers.append(install) }
+        crossOver = install
     }
 
     func refreshBottles() {
         guard preview == nil else { return }
         let installer = installer
-        let rows = Bottle.all().map { BottleRow(bottle: $0, state: installer.state(of: $0)) }
+        var seen = Set<String>()
+        let all = (Bottle.all() + PrefixFinder().all() + addedPrefixes).filter { seen.insert($0.url.standardizedFileURL.path).inserted }
+        let rows = all.map { BottleRow(bottle: $0, state: installer.state(of: $0)) }
         if rows != bottles { bottles = rows }
     }
+
+    /// Prefixes the user added by hand, each with the Wine it runs on.
+    private var addedPrefixes: [Bottle] {
+        let saved = defaults.array(forKey: Key.addedPrefixes) as? [[String: String]] ?? []
+        return saved.compactMap { entry in
+            guard let path = entry["path"] else { return nil }
+            let url = URL(fileURLWithPath: path)
+            guard Bottle.isPrefix(url) else { return nil }
+            return Bottle(url: url, source: .wine, wineLibrary: entry["wine"].map { URL(fileURLWithPath: $0) })
+        }
+    }
+
+    func isAddedByHand(_ bottle: Bottle) -> Bool {
+        (defaults.array(forKey: Key.addedPrefixes) as? [[String: String]] ?? []).contains { $0["path"] == bottle.url.path }
+    }
+
+    /// Adds a prefix from any other Wine: Game Porting Toolkit, a Wine app, or
+    /// one that wasn't found on its own. Asks for its Wine if none is found.
+    func addPrefix() {
+        let panel = NSOpenPanel()
+        panel.title = "Add a Wine Prefix"
+        panel.message = "Choose the folder that holds drive_c."
+        panel.prompt = "Add"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.showsHiddenFiles = true
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        guard Bottle.isPrefix(folder) else {
+            bottleError = "\(folder.lastPathComponent) isn't a Wine prefix. Choose the folder that holds drive_c."
+            return
+        }
+        var library = PrefixFinder.knownWineLibraries().first
+        if library == nil {
+            let wine = NSOpenPanel()
+            wine.title = "Choose Its Wine"
+            wine.message = "Choose the Wine app or folder that runs this prefix."
+            wine.prompt = "Choose"
+            wine.canChooseDirectories = true
+            wine.treatsFilePackagesAsDirectories = false
+            guard wine.runModal() == .OK, let url = wine.url else { return }
+            library = PrefixFinder.findWineLibrary(in: url)
+            guard library != nil else {
+                bottleError = "No Wine 6 or newer found in \(url.lastPathComponent)."
+                return
+            }
+        }
+        var saved = defaults.array(forKey: Key.addedPrefixes) as? [[String: String]] ?? []
+        saved.removeAll { $0["path"] == folder.path }
+        var entry = ["path": folder.path]
+        entry["wine"] = library?.path
+        saved.append(entry)
+        defaults.set(saved, forKey: Key.addedPrefixes)
+        bottleError = nil
+        refreshBottles()
+    }
+
+    func removeAddedPrefix(_ bottle: Bottle) {
+        var saved = defaults.array(forKey: Key.addedPrefixes) as? [[String: String]] ?? []
+        saved.removeAll { $0["path"] == bottle.url.path }
+        defaults.set(saved, forKey: Key.addedPrefixes)
+        refreshBottles()
+    }
+
+    var hasCrossOverBottles: Bool { bottles.contains { $0.bottle.source == .crossOver } || !crossOvers.isEmpty }
 
     func install(_ bottle: Bottle) { run(on: bottle) { try $0.install(into: bottle) } }
 
@@ -293,6 +423,7 @@ final class AppModel: ObservableObject {
         status.loop_hz = 500
         status.torque_permille = 410
         BridgeText.write("F1_2021_dx12.exe", to: &status.game_name)
+        input.vendor_product = UInt32(WheelModel.g29.productID) << 16 | UInt32(WheelModel.logitechVendorID)
         input.steering = UInt32(32768 - 34.0 / 450 * 32768)
         input.throttle = 18350
         input.brake = 53740
@@ -302,10 +433,15 @@ final class AppModel: ObservableObject {
         }
         torqueHistory = (0..<240).map { sin(Double($0) / 14) * 0.45 + sin(Double($0) / 4.1) * 0.08 }
         let games = Bottle(url: Bottle.defaultRoot.appendingPathComponent("Games"))
+        crossOvers = CrossOverInstall.detected()
+        crossOver = crossOvers.first
+        let whisky = Bottle(url: URL(fileURLWithPath: "/tmp/Steam"), source: .whisky, label: "Steam")
+        let wrapper = Bottle(url: URL(fileURLWithPath: "/tmp/AC"), source: .wrapper, label: "Assetto Corsa")
         switch preview {
         case .good:
             status.game_connected = 1
-            bottles = [BottleRow(bottle: games, state: .installed)]
+            bottles = [BottleRow(bottle: games, state: .installed), BottleRow(bottle: whisky, state: .notInstalled),
+                       BottleRow(bottle: wrapper, state: .notInstalled)]
         case .failure:
             status.torque_permille = 0
             bottles = [BottleRow(bottle: games, state: .needsRepair("Proxy missing."))]

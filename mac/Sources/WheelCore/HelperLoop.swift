@@ -52,7 +52,7 @@ public final class HelperLoop: @unchecked Sendable {
         let wheel = port.snapshot()
         if wheel.generation != generation {
             generation = wheel.generation
-            motor.wheelReconnected()
+            motor.wheelReconnected(driver: wheel.model.map { LogitechClassicDriver(model: $0) })
         }
         publishInput(wheel)
 

@@ -44,6 +44,8 @@ if let target = option("--install") ?? option("--uninstall") {
     let installer = BottleInstaller(
         proxy64: folder.appendingPathComponent("x86_64/dinput8.dll"),
         proxy32: folder.appendingPathComponent("i686/dinput8.dll"),
+        // --crossover picks one CrossOver; without it, the newest one found.
+        crossOverApps: option("--crossover").map { [$0] } ?? CrossOverInstall.detected().map(\.url),
         bridgeFile: bridgeURL)
     let bottle = Bottle(url: target)
     do {

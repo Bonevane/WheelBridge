@@ -64,10 +64,37 @@ do {
     check(driver.range(degrees: 5)[2] == 40, "range clamps to the minimum")
     check(driver.stop() == stopReport, "stop")
     check(driver.start(rangeDegrees: 540).first == stopReport, "start releases the motor first")
-    check(LogitechClassicDriver.switchToNative().last == [0xf8, 0x09, 0x05, 0x01, 0x01, 0, 0], "native mode switch")
     for report in driver.start(rangeDegrees: 900) + [driver.torque(0.3)] {
         check(report.count == LogitechClassicDriver.reportLength, "reports are seven bytes")
     }
+
+    // Which wheel arrived, from its USB id and firmware version.
+    func switchTarget(_ product: Int, _ version: Int) -> (WheelModel, [OutputReport])? {
+        if case .switchMode(let model, let reports) = WheelArrival.identify(productID: product, version: version) { return (model, reports) }
+        return nil
+    }
+    check(WheelArrival.identify(productID: 0xc24f, version: 0) == .ready(.g29), "a native G29 is ready")
+    check(switchTarget(0xc294, 0x1350)?.0 == .g29, "a G29 in compatibility mode")
+    check(switchTarget(0xc294, 0x1350)?.1.last == OutputReport([0xf8, 0x09, 0x05, 0x01, 0x01, 0, 0]), "the G29 switch")
+    check(switchTarget(0xc294, 0x8901)?.0 == .g29, "a later G29 firmware")
+    check(switchTarget(0xc294, 0x1234)?.0 == .g27, "a G27 in compatibility mode")
+    check(switchTarget(0xc294, 0x1300)?.0 == .drivingForceGT, "a Driving Force GT")
+    check(switchTarget(0xc294, 0x1200)?.1 == [OutputReport([0xf8, 0x10, 0, 0, 0, 0, 0])], "a G25 uses its own switch")
+    check(switchTarget(0xc294, 0x1000)?.1 == [OutputReport([0xf8, 0x01, 0, 0, 0, 0, 0])], "a Driving Force Pro uses its own switch")
+    check(WheelArrival.identify(productID: 0xc294, version: 0x0300) == .ready(.drivingForce), "a genuine Driving Force stays")
+    check(switchTarget(0xc267, 0)?.0 == .g923PlayStation, "a G923 in PlayStation mode")
+    check(switchTarget(0xc267, 0)?.1.first?.id == 0x30, "the G923 switch uses report 0x30")
+    check(WheelArrival.identify(productID: 0xc262, version: 0) == .unsupported(.g920), "a G920 is named but not driven")
+    check(WheelArrival.identify(productID: 0x1234, version: 0) == .unknown, "other devices are ignored")
+
+    // Range commands differ by wheel.
+    let dfp = LogitechClassicDriver(model: .drivingForcePro)
+    check(dfp.rangeReports(degrees: 900) == [[0xf8, 0x03, 0, 0, 0, 0, 0], [0x81, 0x0b, 0, 0, 0, 0, 0]], "DFP at 900 has no fine limit")
+    check(dfp.rangeReports(degrees: 200).first == [0xf8, 0x02, 0, 0, 0, 0, 0], "DFP at 200 uses the small coarse limit")
+    let fine = dfp.rangeReports(degrees: 540)
+    check(fine.count == 2 && fine[1][0] == 0x81 && fine[1][4] == 0xff, "DFP at 540 adds a fine limit")
+    check(LogitechClassicDriver(model: .momoRacing).rangeReports(degrees: 540).isEmpty, "a MOMO's range is fixed")
+    check(LogitechClassicDriver(model: .g27).range(degrees: 1080) == [0xf8, 0x81, 0x84, 0x03, 0, 0, 0], "a G27 clamps at 900")
 }
 
 // MARK: Effects
@@ -374,6 +401,26 @@ do {
     check(try Data(contentsOf: sys32.appendingPathComponent("dinput8.wheelbridge-original.dll")) == Data("placeholder64".utf8),
           "a reinstall never backs up our own proxy")
 
+    // Switching to another CrossOver, or updating it, changes the builtin.
+    let other = root.appendingPathComponent("CrossOver CX.app")
+    for arch in ["x86_64-windows", "i386-windows"] {
+        let folder = other.appendingPathComponent("Contents/SharedSupport/CrossOver/lib/wine/\(arch)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var data = Data(repeating: 0, count: 64)
+        data.append(Data("Wine builtin DLL newer \(arch)".utf8))
+        try data.write(to: folder.appendingPathComponent("dinput8.dll"))
+    }
+    var switched = installer
+    switched.crossOverApps = [other]
+    check(switched.state(of: bottle) == .needsRepair("Made for a different CrossOver version."), "a different CrossOver is noticed")
+    try switched.install(into: bottle)
+    check(switched.state(of: bottle) == .installed, "repair takes the chosen CrossOver's dinput8")
+    let manifest = try String(contentsOf: bottle.url.appendingPathComponent("wheelbridge-install.json"), encoding: .utf8)
+    check(manifest.contains("CrossOver CX.app"), "the manifest records which CrossOver")
+    check(manifest.contains("builtin,native"), "the manifest keeps the original override")
+    try installer.install(into: bottle)
+    check(installer.state(of: bottle) == .installed, "switching back works")
+
     try installer.uninstall(from: bottle)
     check(tree(bottle.url) == before, "uninstall restores every byte")
     check(installer.state(of: bottle) == .notInstalled, "uninstalled")
@@ -414,6 +461,93 @@ do {
     }
 } catch {
     check(false, "installer threw \(error)")
+}
+
+// MARK: Other Wine tools
+
+do {
+    let fm = FileManager.default
+    let unresolved = fm.temporaryDirectory.appendingPathComponent("wb-home-\(UUID().uuidString)")
+    try fm.createDirectory(at: unresolved, withIntermediateDirectories: true)
+    let home = unresolved.resolvingSymlinksInPath()
+    defer { try? fm.removeItem(at: home) }
+
+    func makePrefix(_ url: URL) throws {
+        for folder in ["drive_c/windows/system32", "dosdevices"] {
+            try fm.createDirectory(at: url.appendingPathComponent(folder), withIntermediateDirectories: true)
+        }
+        try fm.createSymbolicLink(atPath: url.appendingPathComponent("dosdevices/z:").path, withDestinationPath: "/")
+        try Data("x\n".utf8).write(to: url.appendingPathComponent("system.reg"))
+        try Data("x\n\n".utf8).write(to: url.appendingPathComponent("user.reg"))
+        try Data("placeholder".utf8).write(to: url.appendingPathComponent("drive_c/windows/system32/dinput8.dll"))
+    }
+    func makeWine(_ library: URL, tag: String) throws {
+        let folder = library.appendingPathComponent("x86_64-windows")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        var data = Data(repeating: 0, count: 64)
+        data.append(Data("Wine builtin DLL \(tag)".utf8))
+        try data.write(to: folder.appendingPathComponent("dinput8.dll"))
+    }
+
+    // Whisky: a bottle in its container, with its Wine in Application Support.
+    let whiskyBottle = home.appendingPathComponent("Library/Containers/com.isaacmarovitz.Whisky/Bottles/1234-ABCD")
+    try makePrefix(whiskyBottle)
+    try (["info": ["name": "Steam"]] as NSDictionary).write(to: whiskyBottle.appendingPathComponent("Metadata.plist"))
+    let whiskyWine = home.appendingPathComponent("Library/Application Support/com.isaacmarovitz.Whisky/Libraries/Wine/lib/wine")
+    try makeWine(whiskyWine, tag: "whisky")
+
+    // Sikarugir: one app per game, prefix and Wine inside.
+    let wrapper = home.appendingPathComponent("Applications/Sikarugir/Assetto Corsa.app/Contents")
+    try makePrefix(wrapper.appendingPathComponent("SharedSupport/prefix"))
+    try makeWine(wrapper.appendingPathComponent("SharedSupport/wine/lib/wine"), tag: "sikarugir")
+
+    // Heroic: a settings file naming the prefix and the Wine binary.
+    let heroicPrefix = home.appendingPathComponent("Games/Heroic/Prefixes/default/BeamNG")
+    try makePrefix(heroicPrefix)
+    let heroicWine = home.appendingPathComponent("Library/Application Support/heroic/tools/wine/Wine-10")
+    try makeWine(heroicWine.appendingPathComponent("lib/wine"), tag: "heroic")
+    let configs = home.appendingPathComponent("Library/Application Support/heroic/GamesConfig")
+    try fm.createDirectory(at: configs, withIntermediateDirectories: true)
+    let settings: [String: Any] = ["beamng": ["winePrefix": heroicPrefix.path,
+                                              "wineVersion": ["bin": heroicWine.appendingPathComponent("bin/wine").path, "type": "wine"]]]
+    try JSONSerialization.data(withJSONObject: settings).write(to: configs.appendingPathComponent("beamng.json"))
+    // A game Heroic runs in a CrossOver bottle belongs to the CrossOver list.
+    let crossOverGame: [String: Any] = ["acc": ["winePrefix": whiskyBottle.path, "wineVersion": ["type": "crossover"]]]
+    try JSONSerialization.data(withJSONObject: crossOverGame).write(to: configs.appendingPathComponent("acc.json"))
+
+    // ~/.wine with no Wine app installed.
+    try makePrefix(home.appendingPathComponent(".wine"))
+
+    let found = PrefixFinder(home: home).all()
+    let whisky = found.first { $0.source == .whisky }
+    check(whisky?.name == "Steam", "finds a Whisky bottle by its name")
+    func same(_ a: URL?, _ b: URL) -> Bool { a?.resolvingSymlinksInPath().path == b.resolvingSymlinksInPath().path }
+    check(same(whisky?.wineLibrary, whiskyWine), "finds Whisky's Wine")
+    let sikarugir = found.first { $0.source == .wrapper }
+    check(sikarugir?.name == "Assetto Corsa", "finds a Sikarugir wrapper")
+    check(sikarugir?.wineLibrary?.path.hasSuffix("SharedSupport/wine/lib/wine") == true, "uses the wrapper's own Wine")
+    let heroic = found.first { $0.source == .heroic }
+    check(heroic?.name == "BeamNG", "finds a Heroic prefix")
+    check(same(heroic?.wineLibrary, heroicWine.appendingPathComponent("lib/wine")), "uses the Wine Heroic names")
+    check(found.filter { $0.source == .heroic }.count == 1, "leaves Heroic's CrossOver games to CrossOver")
+    check(found.contains { $0.source == .wine && $0.name == ".wine" }, "finds ~/.wine")
+    check(found.count == 4, "finds each prefix once")
+
+    // Installing uses the prefix's own Wine, not CrossOver.
+    if let sikarugir {
+        let proxy = home.appendingPathComponent("proxy64.dll")
+        try Data("proxy64".utf8).write(to: proxy)
+        var installer = BottleInstaller(proxy64: proxy, proxy32: proxy, crossOverApps: [], bridgeFile: home.appendingPathComponent("bridge.bin"))
+        installer.isWineRunning = { _ in false }
+        try installer.install(into: sikarugir)
+        check(installer.state(of: sikarugir) == .installed, "installs into a wrapper")
+        let real = try Data(contentsOf: sikarugir.url.appendingPathComponent("drive_c/windows/system32/wheelbridge_dinput8_real.dll"))
+        check(String(decoding: real, as: UTF8.self).contains("sikarugir"), "forwards to the wrapper's Wine")
+        try installer.uninstall(from: sikarugir)
+        check(installer.state(of: sikarugir) == .notInstalled, "uninstalls from a wrapper")
+    }
+} catch {
+    check(false, "prefix finder threw \(error)")
 }
 
 print("\(passed) passed, \(failed) failed")

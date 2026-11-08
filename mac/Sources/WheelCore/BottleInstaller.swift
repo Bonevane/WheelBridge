@@ -2,19 +2,42 @@ import CryptoKit
 import Darwin
 import Foundation
 
-/// A CrossOver bottle.
-public struct Bottle: Equatable, Identifiable {
-    public var url: URL
-    public var id: String { url.path }
-    public var name: String { url.lastPathComponent }
+/// A Wine prefix that games run in: a CrossOver bottle, a Whisky bottle, a
+/// Sikarugir or Wineskin wrapper, a Heroic prefix, or a plain Wine prefix.
+public struct Bottle: Equatable, Identifiable, Hashable {
+    /// What made the prefix, which decides where its Wine comes from.
+    public enum Source: String, Codable, CaseIterable {
+        case crossOver = "CrossOver"
+        case whisky = "Whisky"
+        case wrapper = "Wrapper"
+        case heroic = "Heroic"
+        case wine = "Wine"
+    }
 
-    public init(url: URL) { self.url = url }
+    public var url: URL
+    public var source: Source
+    /// A friendlier name than the folder's, such as a Whisky bottle's.
+    public var label: String?
+    /// The Wine library folder (".../lib/wine") whose dinput8 the proxy forwards
+    /// to. Nil for CrossOver bottles, which use the chosen CrossOver.
+    public var wineLibrary: URL?
+
+    public var id: String { url.path }
+    public var name: String { label ?? url.lastPathComponent }
+
+    public init(url: URL, source: Source = .crossOver, label: String? = nil, wineLibrary: URL? = nil) {
+        self.url = url
+        self.source = source
+        self.label = label
+        self.wineLibrary = wineLibrary
+    }
 
     public var userRegistry: URL { url.appendingPathComponent("user.reg") }
     var system32: URL { url.appendingPathComponent("drive_c/windows/system32") }
     var syswow64: URL { url.appendingPathComponent("drive_c/windows/syswow64") }
     var manifestURL: URL { url.appendingPathComponent("wheelbridge-install.json") }
 
+    /// CrossOver's bottles.
     public static func all(in root: URL = Bottle.defaultRoot) -> [Bottle] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
         return names.sorted().map { Bottle(url: root.appendingPathComponent($0)) }.filter {
@@ -23,8 +46,17 @@ public struct Bottle: Equatable, Identifiable {
     }
 
     public static var defaultRoot: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        if let custom = ProcessInfo.processInfo.environment["CX_BOTTLE_PATH"], !custom.isEmpty {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/CrossOver/Bottles", isDirectory: true)
+    }
+
+    /// Whether a folder is a Wine prefix at all.
+    public static func isPrefix(_ url: URL) -> Bool {
+        let fm = FileManager.default
+        return ["system.reg", "user.reg", "drive_c"].allSatisfy { fm.fileExists(atPath: url.appendingPathComponent($0).path) }
     }
 }
 
@@ -49,7 +81,7 @@ public struct BottleInstaller {
             switch self {
             case .wineRunning: return "Quit everything running in this bottle first."
             case .noDriveZ: return "This bottle has no Z: drive mapped to /."
-            case .builtinNotFound(let arch): return "Can't find CrossOver's \(arch) dinput8.dll."
+            case .builtinNotFound(let arch): return "Can't find this Wine's \(arch) dinput8.dll. Wine 6 or newer is needed."
             case .proxyMissing(let path): return "Proxy not found at \(path)."
             case .notInstalled: return "Not installed in this bottle."
             }
@@ -72,12 +104,14 @@ public struct BottleInstaller {
         var version = 1
         /// What the override was before, or nil if there was none.
         var previousOverride: String?
+        /// The Wine library whose dinput8 was copied in. Absent in older manifests.
+        var crossOver: String?
     }
 
     /// The bundled proxies.
     public var proxy64: URL
     public var proxy32: URL
-    /// CrossOver installs to look in for its builtin DLLs.
+    /// CrossOver installs to look in for its builtin DLLs, the chosen one first.
     public var crossOverApps: [URL]
     public var bridgeFile: URL
     /// Whether wine is running in a bottle. Replaceable for tests.
@@ -106,8 +140,15 @@ public struct BottleInstaller {
             let dll = folder.appendingPathComponent(Self.dllName)
             guard fm.fileExists(atPath: dll.path) else { return .needsRepair("Proxy missing.") }
             guard Self.sameContents(dll, proxy) else { return .needsRepair("Proxy replaced or out of date.") }
-            guard fm.fileExists(atPath: folder.appendingPathComponent(Self.realName).path) else {
+            let real = folder.appendingPathComponent(Self.realName)
+            guard fm.fileExists(atPath: real.path) else {
                 return .needsRepair("CrossOver's dinput8 copy missing.")
+            }
+            // After a CrossOver update, or a switch to another CrossOver, the copy
+            // no longer matches the Wine that runs the bottle.
+            let arch = proxy == proxy64 ? "x86_64-windows" : "i386-windows"
+            if let builtin = builtin(arch: arch, for: bottle), !Self.sameContents(real, builtin) {
+                return .needsRepair("Made for a different CrossOver version.")
             }
         }
         let registry = (try? String(contentsOf: bottle.userRegistry, encoding: .utf8)) ?? ""
@@ -127,7 +168,7 @@ public struct BottleInstaller {
         for (folder, proxy) in architectures(of: bottle) {
             guard FileManager.default.fileExists(atPath: proxy.path) else { throw Failure.proxyMissing(proxy.path) }
             let arch = proxy == proxy64 ? "x86_64-windows" : "i386-windows"
-            guard let builtin = builtin(arch: arch) else { throw Failure.builtinNotFound(arch) }
+            guard let builtin = builtin(arch: arch, for: bottle) else { throw Failure.builtinNotFound(arch) }
             plan.append((folder, proxy, builtin))
         }
 
@@ -136,9 +177,11 @@ public struct BottleInstaller {
             let registry = (try? String(contentsOf: bottle.userRegistry, encoding: .utf8)) ?? ""
             manifest = Manifest(previousOverride: RegistryText.value(
                 in: registry, section: Self.overrideSection, key: Self.overrideKey))
-            // Written first, so a failure below can still be undone.
-            try write(manifest!, to: bottle)
         }
+        // Which Wine the copy came from, for support.
+        manifest!.crossOver = plan.first?.builtin.deletingLastPathComponent().deletingLastPathComponent().path
+        // Written first, so a failure below can still be undone.
+        try write(manifest!, to: bottle)
 
         for step in plan {
             try placeProxy(in: step.folder, proxy: step.proxy, builtin: step.builtin)
@@ -187,9 +230,15 @@ public struct BottleInstaller {
         return result
     }
 
-    private func builtin(arch: String) -> URL? {
-        crossOverApps.lazy
-            .map { $0.appendingPathComponent("Contents/SharedSupport/CrossOver/lib/wine/\(arch)/dinput8.dll") }
+    /// The Wine library folders a bottle's Wine lives in, best first.
+    func wineLibraries(for bottle: Bottle) -> [URL] {
+        if let library = bottle.wineLibrary { return [library] }
+        return crossOverApps.map { $0.appendingPathComponent("Contents/SharedSupport/CrossOver/lib/wine") }
+    }
+
+    private func builtin(arch: String, for bottle: Bottle) -> URL? {
+        wineLibraries(for: bottle).lazy
+            .map { $0.appendingPathComponent("\(arch)/dinput8.dll") }
             .first(where: Self.isWineBuiltin)
     }
 

@@ -35,7 +35,7 @@ public struct MotorController {
         public var activeEffects = 0
     }
 
-    private let driver: WheelDriver
+    public private(set) var driver: WheelDriver
     private var engine = EffectEngine()
     private let limiter = TorqueLimiter()
     private var motion = WheelMotion()
@@ -65,7 +65,7 @@ public struct MotorController {
         }
         if appliedRange != settings.rangeDegrees {
             appliedRange = settings.rangeDegrees
-            step.reports.append(driver.range(degrees: settings.rangeDegrees))
+            step.reports += driver.rangeReports(degrees: settings.rangeDegrees)
         }
 
         updateMotion(steering: steering, now: now)
@@ -100,8 +100,10 @@ public struct MotorController {
     /// What to send when the helper is about to exit, or has just lost the wheel.
     public func shutdownReports() -> [[UInt8]] { [driver.stop()] }
 
-    /// Forgets the wheel's state, so the next step brings a replugged wheel up again.
-    public mutating func wheelReconnected() {
+    /// Forgets the wheel's state, so the next step brings a replugged wheel up
+    /// again, speaking to it with `driver` if a different wheel came back.
+    public mutating func wheelReconnected(driver newDriver: WheelDriver? = nil) {
+        if let newDriver { driver = newDriver }
         started = false
         appliedRange = nil
         lastTorqueReport = nil

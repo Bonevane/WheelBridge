@@ -43,6 +43,18 @@ for arch in x86_64 i686; do
     cat "$work/motor.log"
 done
 
+cp build/windows/x86_64/wbgames.exe "$bottle/drive_c/wbgames.exe"
+for profile in kunos beamng sdl; do
+    print "=== $profile-style game"
+    : >"$work/motor.log"
+    "$wine/wine" --bottle wbtest --cx-app 'C:\wbgames.exe' $profile 2 2>"$work/wine-$profile.log" | tr -d '\r' | tee "$work/games-$profile.log"
+    [[ $(tail -1 "$work/games-$profile.log") == done ]] || result=1
+    forces=$(grep -c '^report 11 00' "$work/motor.log")
+    distinct=$(grep '^report 11 00' "$work/motor.log" | sort -u | wc -l | tr -d ' ')
+    print -- "--- $forces force reports, $distinct distinct levels"
+    (( distinct > 2 )) || { print "FAIL the motor never moved"; result=1; }
+done
+
 kill -TERM $helper_pid
 wait $helper_pid
 print -- "--- after the helper was told to quit"

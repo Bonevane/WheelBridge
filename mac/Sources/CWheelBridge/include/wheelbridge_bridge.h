@@ -146,7 +146,8 @@ typedef enum {
     WB_WHEEL_SWITCHING = 1, /* found in compatibility mode, switching to native */
     WB_WHEEL_READY = 2,
     WB_WHEEL_OPEN_FAILED = 3,
-    WB_WHEEL_CLAIMED = 4 /* another driver is blocking it */
+    WB_WHEEL_CLAIMED = 4, /* another driver is blocking it */
+    WB_WHEEL_UNSUPPORTED = 5 /* recognised, but its protocol isn't supported yet */
 } wb_wheel_state;
 
 typedef struct {

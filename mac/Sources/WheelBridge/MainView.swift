@@ -1,3 +1,4 @@
+import AppKit
 import CWheelBridge
 import SwiftUI
 import WheelCore
@@ -94,7 +95,7 @@ struct WheelInspector: View {
             }
             Divider()
             SettingSlider(label: "Force", value: $model.strength, range: 0...100, suffix: "%")
-            SettingSlider(label: "Range", value: $model.rangeDegrees, range: 40...900, step: 10, suffix: "°")
+            SettingSlider(label: "Range", value: $model.rangeDegrees, range: model.rangeLimits, step: 10, suffix: "°")
             Spacer(minLength: 0)
             StopMotorButton(model: model)
         }
@@ -146,14 +147,21 @@ struct BottlesScreen: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Bottles").font(.system(size: 28, weight: .bold))
-            Text("Installing covers every game in the bottle.")
+            HStack(alignment: .firstTextBaseline) {
+                Text("Bottles").font(.system(size: 28, weight: .bold))
+                Spacer()
+                Button("Add Wine Prefix…") { model.addPrefix() }.glassButton()
+            }
+            Text("Installing covers every game in the bottle. CrossOver, Whisky, Sikarugir, Heroic and plain Wine all work.")
                 .font(.system(size: 15)).foregroundStyle(.secondary)
+            if model.hasCrossOverBottles {
+                CrossOverRow(model: model)
+            }
             if let error = model.bottleError {
                 Text(error).font(.system(size: 13)).foregroundStyle(.red)
             }
             if model.bottles.isEmpty {
-                Text("No CrossOver bottles found.").font(.system(size: 14)).foregroundStyle(.secondary)
+                Text("No bottles or Wine prefixes found.").font(.system(size: 14)).foregroundStyle(.secondary)
             }
             ScrollView {
                 VStack(spacing: 10) {
@@ -170,16 +178,64 @@ struct BottlesScreen: View {
     }
 }
 
+/// Which CrossOver the bottles get their dinput8 from.
+struct CrossOverRow: View {
+    @ObservedObject var model: AppModel
+
+    private func label(_ install: CrossOverInstall) -> String {
+        [install.name, install.version].compactMap { $0 }.joined(separator: " ")
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("CrossOver").font(.system(size: 15, weight: .semibold))
+                Text(model.crossOver.map { ($0.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath }
+                     ?? "None found")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            Spacer()
+            Menu {
+                ForEach(model.crossOvers) { install in
+                    Button {
+                        model.crossOver = install
+                    } label: {
+                        if install == model.crossOver {
+                            Label(label(install), systemImage: "checkmark")
+                        } else {
+                            Text(label(install))
+                        }
+                    }
+                }
+                if !model.crossOvers.isEmpty { Divider() }
+                Button("Choose Other…") { model.chooseCrossOver() }
+            } label: {
+                Text(model.crossOver.map(label) ?? "Choose…")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .padding(.horizontal, 12)
+            .frame(minHeight: 34)
+            .glassPanel(cornerRadius: 11)
+        }
+        .padding(16)
+        .glassPanel(cornerRadius: 16)
+    }
+}
+
 struct BottleCard: View {
     @ObservedObject var model: AppModel
     var row: BottleRow
 
     private var description: String {
+        let state: String
         switch row.state {
-        case .notInstalled: return "Not installed"
-        case .installed: return "Installed"
-        case .needsRepair(let reason): return reason
+        case .notInstalled: state = "Not installed"
+        case .installed: state = "Installed"
+        case .needsRepair(let reason): state = reason
         }
+        return "\(row.bottle.source.rawValue) · \(state)"
     }
 
     var body: some View {
@@ -205,6 +261,12 @@ struct BottleCard: View {
         }
         .padding(16)
         .glassPanel(cornerRadius: 16)
+        .contextMenu {
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([row.bottle.url]) }
+            if model.isAddedByHand(row.bottle), row.state == .notInstalled {
+                Button("Remove from List") { model.removeAddedPrefix(row.bottle) }
+            }
+        }
     }
 }
 

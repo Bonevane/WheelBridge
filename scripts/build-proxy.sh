@@ -16,6 +16,8 @@ for arch in x86_64 i686; do
         -o "$out/dinput8.dll" "${sources[@]}" windows/proxy/dinput8.def -ldxguid -luuid
     "$arch-w64-mingw32-gcc" -std=c11 -O2 -Wall -Wextra -Wno-missing-field-initializers -static-libgcc \
         -o "$out/wbprobe.exe" windows/probe/wbprobe.c -ldinput8 -ldxguid -luuid
+    "$arch-w64-mingw32-gcc" -std=c11 -O2 -Wall -Wextra -Wno-missing-field-initializers -static-libgcc \
+        -o "$out/wbgames.exe" windows/probe/wbgames.c -ldinput8 -ldxguid -luuid
     "$arch-w64-mingw32-strip" "$out/dinput8.dll"
 done
 ls -la "$build"/*/dinput8.dll

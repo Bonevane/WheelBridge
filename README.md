@@ -1,10 +1,13 @@
 # WheelBridge
 
 Force feedback and full wheel support for Windows racing games running through
-CrossOver on macOS, starting with the Logitech G29.
+Wine on macOS: CrossOver, Whisky, Sikarugir, Kegworks, Wineskin, Heroic, Game
+Porting Toolkit or plain Wine. It supports Logitech's classic force feedback wheels.
 
-**Status:** working end to end in CrossOver with a simulated wheel. Not yet tested
-with a real wheel.
+**Status:** tested on a real G29 in F1 2021 under CrossOver. Other wheels and
+launchers follow published protocol notes and pass the tests below, but haven't
+been tried on hardware. See [docs/SUPPORT.md](docs/SUPPORT.md) for games, wheels
+and launchers.
 
 ## How it works
 
@@ -37,7 +40,7 @@ It needs no kext, no root and no SIP change. Read
 | `mac/Sources/WheelBridge` | The app |
 | `mac/Sources/wheelcore-check` | Logic checks |
 | `windows/proxy` | The `dinput8.dll` proxy |
-| `windows/probe` | A stand-in game for testing under Wine |
+| `windows/probe` | Stand-in games for testing under Wine: a basic one, and ones that copy Kunos, BeamNG and SDL games |
 
 ## Building
 
@@ -65,8 +68,10 @@ scripts/test-in-wine.sh /some/scratch/folder
 
 This runs a real CrossOver throwaway bottle with the real installer and proxies,
 plus a helper with a simulated wheel. A 64-bit and a 32-bit test game each find
-the wheel, play a force and stall, and the script prints the exact reports the
-motor would receive. It never touches your own bottles.
+the wheel, play a force and stall. Three more copy the DirectInput calls of
+Assetto Corsa, ACC and AC EVO, of BeamNG.drive, and of SDL games, and each must
+move the motor. The script prints the exact reports the motor would receive. It
+never touches your own bottles.
 
 To look at the screens with sample data, without the helper or any bottle:
 
@@ -77,11 +82,8 @@ open -n build/WheelBridge.app --args --preview failure --screen Health
 
 ## Not yet tested on hardware
 
-- Whether the G29 turns the expected way for a given force. Reverse force
-  direction exists in case it doesn't.
-- The compatibility-mode switch from `c294` to `c24f`.
-- Real games, beyond the test probe.
-- Starting the helper with launchd, and Input Monitoring prompts.
+- Any wheel but the G29, and the switches out of compatibility mode.
+- Games other than F1 2021, and launchers other than CrossOver.
 
 ## Licence
 
