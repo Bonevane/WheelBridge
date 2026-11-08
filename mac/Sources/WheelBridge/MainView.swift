@@ -309,6 +309,8 @@ struct HealthInspector: View {
             ForEach(model.bottles) { row in
                 fact(row.bottle.name, row.state == .installed ? "Installed" : row.state == .notInstalled ? "Not installed" : "Needs repair")
             }
+            Divider()
+            UpdatesSection(updater: .shared)
             Spacer(minLength: 0)
             Button {
                 model.copyDiagnostics()

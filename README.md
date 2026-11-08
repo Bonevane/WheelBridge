@@ -130,8 +130,8 @@ Only the tested ones have been tried on real hardware. The rest follow published
 
 ### Install
 
-1. **Build it** (below) and drag `build/WheelBridge.app` into Applications. Releases with a signed DMG are coming.
-2. **Open it.** macOS asks for Input Monitoring, which the helper needs to read the wheel. The helper installs itself as a LaunchAgent and starts at login.
+1. **Download** `WheelBridge-<version>.dmg` from [Releases](https://github.com/Bonevane/WheelBridge/releases), open it and drag WheelBridge onto Applications.
+2. **Open it.** It isn't notarized by Apple, so the first time macOS refuses. Click **Done**, then go to System Settings › Privacy & Security, scroll down and click **Open Anyway** next to WheelBridge. After that it opens normally. macOS then asks for Input Monitoring, which the helper needs to read the wheel. The helper installs itself and starts at login.
 3. **Bottles:** pick your CrossOver if you have more than one, then click **Install** on each bottle you race in. Prefixes from other launchers show up on their own, and **Add Wine Prefix…** covers the rest.
 4. **Race.** Plug in the wheel, start the game, and pick the Logitech G29 in its controls. The menu bar shows when force feedback is on.
 
@@ -178,7 +178,8 @@ Shows every screen with sample data, no helper or bottle needed.
 - [x] **Other launchers:** Whisky, Sikarugir, Kegworks, Wineskin, Heroic, plain Wine and Game Porting Toolkit
 - [x] **Live wheel view:** steering, pedals, torque and range at a glance
 - [x] **Tested on hardware:** G29 in F1 2021 under CrossOver
-- [ ] **Signed, notarized DMG** and GitHub releases
+- [x] **Updates from GitHub:** checked daily, downloaded with resume, verified, installed with one click
+- [ ] **Notarized DMG**, so the first launch needs no trip to Privacy & Security
 - [ ] **HID++ wheels:** G920 and the Xbox G923
 - [ ] **Generic PID driver** for direct drive bases (Moza, Simagic, Simucube, Cammus, OpenFFBoard)
 - [ ] **Thrustmaster and Fanatec**

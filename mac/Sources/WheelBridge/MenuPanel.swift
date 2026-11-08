@@ -3,6 +3,7 @@ import SwiftUI
 /// The menu bar panel: a status card, the checklist and the quick controls.
 struct MenuPanel: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var updater = Updater.shared
     var openWindow: () -> Void
 
     private var cardTint: Color {
@@ -55,6 +56,10 @@ struct MenuPanel: View {
                 LevelBar(fraction: abs(model.torque))
             }
             .accessibilityElement(children: .combine)
+            MenuUpdateRow(updater: updater) {
+                model.screen = .health
+                openWindow()
+            }
             HStack(spacing: 8) {
                 Button(action: openWindow) {
                     Text("Open WheelBridge").frame(maxWidth: .infinity)

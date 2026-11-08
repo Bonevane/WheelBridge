@@ -221,8 +221,11 @@ final class AppModel: ObservableObject {
                          fix: "Install into a bottle in Bottles.")
     }
 
+    /// A game is driving the wheel right now.
+    var gameConnected: Bool { status.game_connected != 0 }
+
     private var gameLink: ChainLink {
-        status.game_connected != 0
+        gameConnected
             ? ChainLink(name: "Game", detail: gameName, state: .good)
             : ChainLink(name: "Game", detail: "None", state: .waiting)
     }

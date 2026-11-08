@@ -550,5 +550,16 @@ do {
     check(false, "prefix finder threw \(error)")
 }
 
+// MARK: Release versions
+
+check(ReleaseVersion.isNewer("v0.3.10", than: "0.3.9"), "0.3.10 is newer than 0.3.9")
+check(!ReleaseVersion.isNewer("0.2.0", than: "0.2"), "0.2.0 is the same as 0.2")
+check(!ReleaseVersion.isNewer("0.1.0", than: "0.2.0"), "an older release isn't newer")
+check(ReleaseVersion.isNewer("1.0.0", than: "0.9.9"), "1.0.0 is newer than 0.9.9")
+let sums = "abc123  WheelBridge-0.2.0.dmg\nDEF456 *Other.zip\n"
+check(ReleaseVersion.checksum(for: "WheelBridge-0.2.0.dmg", in: sums) == "abc123", "reads a checksum line")
+check(ReleaseVersion.checksum(for: "Other.zip", in: sums) == "def456", "reads a binary-mode checksum line")
+check(ReleaseVersion.checksum(for: "Missing.dmg", in: sums) == nil, "a missing file has no checksum")
+
 print("\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

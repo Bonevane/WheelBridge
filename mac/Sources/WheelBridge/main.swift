@@ -24,6 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(previewing ? .regular : .accessory)
         if !previewing { HelperAgent.start() }
         AppModel.shared.start()
+        if !previewing { Updater.shared.start() }
+        if previewing, let index = arguments.firstIndex(of: "--update"), arguments.indices.contains(index + 1) {
+            Updater.shared.applyPreview(arguments[index + 1])
+        }
         statusItem = StatusItemController(model: .shared) { [weak self] in self?.showWindow() }
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { _ in
             // Back to menu bar only once the window has gone.
