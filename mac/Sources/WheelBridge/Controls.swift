@@ -139,11 +139,9 @@ struct StopMotorButton: View {
         } label: {
             // Always clearly red and readable: this is the safety control.
             Text(model.motorStopped ? "Resume Motor" : "Stop Motor")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.red)
-                .frame(maxWidth: .infinity, minHeight: 30)
+                .frame(maxWidth: .infinity)
         }
-        .glassButton()
+        .glassDestructiveButton()
         .keyboardShortcut(".", modifiers: .command)
     }
 }

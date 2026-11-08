@@ -143,7 +143,7 @@ final class AppModel: ObservableObject {
 
     var subheadline: String {
         if motorStopped { return "Resume to send forces again" }
-        if isDriving { return gameName }
+        if isDriving { return "Force feedback is on" }
         if let failed = chain.first(where: { $0.state == .failed }) { return "\(failed.name): \(failed.detail)" }
         return "Start a game in \(installedBottleName ?? "an installed bottle")"
     }

@@ -8,19 +8,38 @@ struct MenuPanel: View {
     private var cardTint: Color {
         if model.motorStopped { return .red }
         if model.isDriving { return .green }
-        return model.chain.contains { $0.state == .failed } ? .red : .gray
+        return model.chain.contains { $0.state == .failed } ? .orange : .secondary
+    }
+
+    private var cardSymbol: String {
+        if model.motorStopped { return "stop.fill" }
+        if model.isDriving { return "checkmark" }
+        return model.chain.contains { $0.state == .failed } ? "exclamationmark" : "ellipsis"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.headline).font(.system(size: 17, weight: .semibold))
-                Text(model.subheadline).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2)
+            HStack(spacing: 12) {
+                Image(systemName: cardSymbol)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(Circle().fill(cardTint))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(model.headline).font(.system(size: 15, weight: .semibold))
+                    Text(model.subheadline).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassPanel(cornerRadius: 16, tint: cardTint)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(cardTint.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(cardTint.opacity(0.25), lineWidth: 0.5)
+            )
+            .accessibilityElement(children: .combine)
 
             Checklist(links: model.chain)
             Divider()
@@ -38,8 +57,7 @@ struct MenuPanel: View {
             .accessibilityElement(children: .combine)
             HStack(spacing: 8) {
                 Button(action: openWindow) {
-                    Text("Open WheelBridge").font(.system(size: 13)).foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity, minHeight: 30)
+                    Text("Open WheelBridge").frame(maxWidth: .infinity)
                 }
                 .glassButton()
                 StopMotorButton(model: model)

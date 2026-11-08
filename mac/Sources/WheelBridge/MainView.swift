@@ -251,7 +251,7 @@ struct HealthInspector: View {
             Button {
                 model.copyDiagnostics()
             } label: {
-                Text("Copy Diagnostics").foregroundStyle(.primary).frame(maxWidth: .infinity, minHeight: 30)
+                Text("Copy Diagnostics").frame(maxWidth: .infinity)
             }
             .glassButton()
         }

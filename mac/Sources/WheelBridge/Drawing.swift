@@ -91,7 +91,7 @@ struct WheelDrawing: View {
                     .font(.system(size: 28, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(Color.accentColor)
-                    .position(x: middle.x - 200, y: middle.y - 236)
+                    .position(x: middle.x - 240, y: middle.y - 236)
             }
         }
         .accessibilityElement(children: .ignore)
