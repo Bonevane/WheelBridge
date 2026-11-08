@@ -88,8 +88,11 @@ contains its proxy:
 - The bottle has `DisableHidraw=1` and `SDL_JOYSTICK_MFI=0`. Which tool set these
   is not known.
 - `dosdevices/z:` points to `/`, which the shared memory design depends on.
-- There is a per-app `dinput8` override for `F1_2021_dx12.exe`, and F1 2020 is
-  installed.
+- The bottle's global override is `"dinput8"="builtin,native"`, and only
+  `F1_2021_dx12.exe` has a per-app `native,builtin` override. So the proxy sits in
+  `system32` for the whole bottle, but only that game actually loads it. Other
+  games get Wine's builtin. WheelBridge sets the global override instead, and
+  records the old value so uninstall restores it.
 
 ### Where each one falls short
 
