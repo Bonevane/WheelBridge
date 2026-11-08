@@ -60,7 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "WheelBridge"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
+        // Only the title bar strip moves the window, so drags reach the sliders.
+        window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: MainView(model: .shared))
         window.center()

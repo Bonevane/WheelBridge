@@ -48,10 +48,10 @@ public struct BottleInstaller {
         public var description: String {
             switch self {
             case .wineRunning: return "Quit everything running in this bottle first."
-            case .noDriveZ: return "This bottle has no Z: drive pointing at the Mac's disk, so games could not reach WheelBridge."
-            case .builtinNotFound(let arch): return "CrossOver's own \(arch) dinput8.dll could not be found."
-            case .proxyMissing(let path): return "WheelBridge is missing its proxy at \(path)."
-            case .notInstalled: return "WheelBridge is not installed in this bottle."
+            case .noDriveZ: return "This bottle has no Z: drive mapped to /."
+            case .builtinNotFound(let arch): return "Can't find CrossOver's \(arch) dinput8.dll."
+            case .proxyMissing(let path): return "Proxy not found at \(path)."
+            case .notInstalled: return "Not installed in this bottle."
             }
         }
     }
@@ -104,15 +104,15 @@ public struct BottleInstaller {
         guard fm.fileExists(atPath: bottle.manifestURL.path) else { return .notInstalled }
         for (folder, proxy) in architectures(of: bottle) {
             let dll = folder.appendingPathComponent(Self.dllName)
-            guard fm.fileExists(atPath: dll.path) else { return .needsRepair("The proxy is missing.") }
-            guard Self.sameContents(dll, proxy) else { return .needsRepair("The proxy has been replaced or is out of date.") }
+            guard fm.fileExists(atPath: dll.path) else { return .needsRepair("Proxy missing.") }
+            guard Self.sameContents(dll, proxy) else { return .needsRepair("Proxy replaced or out of date.") }
             guard fm.fileExists(atPath: folder.appendingPathComponent(Self.realName).path) else {
-                return .needsRepair("CrossOver's own dinput8 copy is missing.")
+                return .needsRepair("CrossOver's dinput8 copy missing.")
             }
         }
         let registry = (try? String(contentsOf: bottle.userRegistry, encoding: .utf8)) ?? ""
         guard RegistryText.value(in: registry, section: Self.overrideSection, key: Self.overrideKey) == Self.overrideValue else {
-            return .needsRepair("The bottle no longer loads the proxy.")
+            return .needsRepair("dinput8 override reset.")
         }
         return .installed
     }

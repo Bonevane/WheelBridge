@@ -5,12 +5,14 @@ set -euo pipefail
 cd "${0:A:h:h}"
 
 ./scripts/build-proxy.sh >/dev/null
+./scripts/make-icon.sh >/dev/null
 (cd mac && swift build -c release --product WheelBridge && swift build -c release --product wheelbridged)
 
 app=build/WheelBridge.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/proxy/x86_64" "$app/Contents/Resources/proxy/i686"
 cp mac/.build/release/WheelBridge mac/.build/release/wheelbridged "$app/Contents/MacOS/"
+cp build/AppIcon.icns "$app/Contents/Resources/"
 cp build/windows/x86_64/dinput8.dll "$app/Contents/Resources/proxy/x86_64/"
 cp build/windows/i686/dinput8.dll "$app/Contents/Resources/proxy/i686/"
 
@@ -20,6 +22,7 @@ cat >"$app/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>WheelBridge</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIdentifier</key><string>com.bonevane.wheelbridge</string>
     <key>CFBundleName</key><string>WheelBridge</string>
     <key>CFBundlePackageType</key><string>APPL</string>

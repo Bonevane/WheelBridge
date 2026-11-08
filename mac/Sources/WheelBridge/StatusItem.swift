@@ -19,9 +19,7 @@ final class StatusItemController: NSObject {
         self.openWindow = openWindow
         super.init()
         if let button = item.button {
-            let image = NSImage(systemSymbolName: "steeringwheel", accessibilityDescription: "WheelBridge")
-            image?.isTemplate = true
-            button.image = image
+            button.image = WheelGlyph.templateImage()
             button.target = self
             button.action = #selector(clicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])

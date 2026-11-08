@@ -121,7 +121,11 @@ final class AppModel: ObservableObject {
     /// Pedals rest high, so pressing one moves it towards zero.
     func pedal(_ raw: UInt32) -> Double { 1 - Double(raw) / 65535 }
 
-    var gameName: String { BridgeText.read(status.game_name) }
+    /// The game's executable, without ".exe".
+    var gameName: String {
+        let name = BridgeText.read(status.game_name)
+        return name.lowercased().hasSuffix(".exe") ? String(name.dropLast(4)) : name
+    }
 
     var wheelReady: Bool { status.wheel_state == WB_WHEEL_READY.rawValue }
 
@@ -133,15 +137,15 @@ final class AppModel: ObservableObject {
 
     var headline: String {
         if motorStopped { return "Motor stopped" }
-        if isDriving { return "Force feedback is on" }
-        return chain.contains { $0.state == .failed } ? "Force feedback is off" : "Ready for a game"
+        if isDriving { return "Active" }
+        return chain.contains { $0.state == .failed } ? "Not working" : "Waiting for a game"
     }
 
     var subheadline: String {
-        if motorStopped { return "No force will reach the wheel" }
-        if isDriving { return "G29 is driving \(gameName)" }
-        if let failed = chain.first(where: { $0.state == .failed }) { return failed.detail }
-        return "Start a game in \(installedBottleName ?? "your bottle")"
+        if motorStopped { return "Resume to send forces again" }
+        if isDriving { return gameName }
+        if let failed = chain.first(where: { $0.state == .failed }) { return "\(failed.name): \(failed.detail)" }
+        return "Start a game in \(installedBottleName ?? "an installed bottle")"
     }
 
     private var installedBottleName: String? {
@@ -150,56 +154,58 @@ final class AppModel: ObservableObject {
 
     private var wheelLink: ChainLink {
         if FileManager.default.fileExists(atPath: "/Library/Extensions/LogiWheelForceFeedback.kext") {
-            return ChainLink(name: "Wheel", detail: "An old Logitech driver is claiming it", state: .failed,
-                             fix: "Uninstall Logitech G HUB, remove LogiWheelForceFeedback.kext from /Library/Extensions, then restart your Mac.")
+            return ChainLink(name: "Wheel", detail: "Blocked by Logitech driver", state: .failed,
+                             fix: "Remove LogiWheelForceFeedback.kext from /Library/Extensions, then restart.")
         }
         guard helperRunning else {
-            return ChainLink(name: "Wheel", detail: "Waiting for the helper", state: .waiting)
+            return ChainLink(name: "Wheel", detail: "Waiting for helper", state: .waiting)
         }
         switch wb_wheel_state(rawValue: status.wheel_state) {
         case WB_WHEEL_READY:
-            return ChainLink(name: "Wheel", detail: "G29 over USB", state: .good)
+            return ChainLink(name: "Wheel", detail: "G29, USB", state: .good)
         case WB_WHEEL_SWITCHING:
             return ChainLink(name: "Wheel", detail: "Switching to native mode", state: .waiting)
         case WB_WHEEL_OPEN_FAILED:
-            return ChainLink(name: "Wheel", detail: "macOS refused access", state: .failed,
-                             fix: "Allow WheelBridge in System Settings, under Privacy & Security, then Input Monitoring.")
+            return ChainLink(name: "Wheel", detail: "Access denied", state: .failed,
+                             fix: "Allow WheelBridge in System Settings › Privacy & Security › Input Monitoring.")
         default:
             return ChainLink(name: "Wheel", detail: "Not connected", state: .failed,
-                             fix: "Plug in the wheel and its power adapter, directly into your Mac if you can.")
+                             fix: "Connect the wheel and its power supply.")
         }
     }
 
     private var helperLink: ChainLink {
         guard helperRunning else {
             return ChainLink(name: "Helper", detail: "Not running", state: .failed,
-                             fix: "Quit and reopen WheelBridge. The helper starts with it.")
+                             fix: "Reopen WheelBridge.")
         }
-        return ChainLink(name: "Helper", detail: "Running at \(status.loop_hz) Hz", state: .good)
+        return ChainLink(name: "Helper", detail: "Running, \(status.loop_hz) Hz", state: .good)
     }
 
     private var bottleLink: ChainLink {
         if let broken = bottles.first(where: { if case .needsRepair = $0.state { return true } else { return false } }),
            case .needsRepair(let reason) = broken.state {
-            return ChainLink(name: "Bottle", detail: "\(broken.bottle.name) needs repair", state: .failed,
-                             fix: "\(reason) A CrossOver update usually causes this. Repair it on the Games screen.")
+            return ChainLink(name: "Bottle", detail: "\(broken.bottle.name): repair needed", state: .failed,
+                             fix: "\(reason) Usually caused by a CrossOver update. Repair it in Bottles.")
         }
         if let name = installedBottleName {
-            return ChainLink(name: "Bottle", detail: "\(name), proxy intact", state: .good)
+            return ChainLink(name: "Bottle", detail: name, state: .good)
         }
-        return ChainLink(name: "Bottle", detail: "Not installed yet", state: .failed,
-                         fix: "Install WheelBridge into a bottle on the Games screen.")
+        return ChainLink(name: "Bottle", detail: "Not installed", state: .failed,
+                         fix: "Install into a bottle in Bottles.")
     }
 
     private var gameLink: ChainLink {
         status.game_connected != 0
             ? ChainLink(name: "Game", detail: gameName, state: .good)
-            : ChainLink(name: "Game", detail: "No game has the wheel", state: .waiting)
+            : ChainLink(name: "Game", detail: "None", state: .waiting)
     }
 
     // MARK: Settings
 
     private func saveSettings() {
+        // Preview data is never saved, so a preview cannot change real settings.
+        guard preview == nil else { return }
         defaults.set(rangeDegrees, forKey: Key.range)
         defaults.set(strength, forKey: Key.strength)
         defaults.set(centering, forKey: Key.centering)
@@ -291,6 +297,9 @@ final class AppModel: ObservableObject {
         input.throttle = 18350
         input.brake = 53740
         input.clutch = 65535
+        if let index = CommandLine.arguments.firstIndex(of: "--range"), let value = Double(CommandLine.arguments[index + 1]) {
+            rangeDegrees = value
+        }
         torqueHistory = (0..<240).map { sin(Double($0) / 14) * 0.45 + sin(Double($0) / 4.1) * 0.08 }
         let games = Bottle(url: Bottle.defaultRoot.appendingPathComponent("Games"))
         switch preview {
@@ -299,7 +308,7 @@ final class AppModel: ObservableObject {
             bottles = [BottleRow(bottle: games, state: .installed)]
         case .failure:
             status.torque_permille = 0
-            bottles = [BottleRow(bottle: games, state: .needsRepair("The proxy is missing."))]
+            bottles = [BottleRow(bottle: games, state: .needsRepair("Proxy missing."))]
         }
     }
 }

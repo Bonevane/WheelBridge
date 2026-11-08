@@ -30,22 +30,63 @@ struct DrawingBackdrop: View {
     }
 }
 
-/// The wheel, drawn live with callouts for its angle, range and torque.
+/// The wheel's solid parts, rim, spokes and hub, as one shape so it can be glass.
+/// Drawn at radius 205 and scaled to fit. The pieces do not overlap, so the
+/// shape fills correctly whichever way each piece winds.
+struct WheelShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let centre = CGPoint(x: rect.midX, y: rect.midY)
+        let scale = min(rect.width, rect.height) / 410
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: centre.x + x * scale, y: centre.y + y * scale)
+        }
+        // The rim is a circle's outline, made solid, so no hole needs cutting.
+        let middle = 192.5 * scale
+        var path = Path(ellipseIn: CGRect(x: centre.x - middle, y: centre.y - middle, width: middle * 2, height: middle * 2))
+            .strokedPath(StrokeStyle(lineWidth: 25 * scale))
+        path.addEllipse(in: CGRect(x: centre.x - 58 * scale, y: centre.y - 58 * scale, width: 116 * scale, height: 116 * scale))
+        for side: CGFloat in [-1, 1] {
+            path.addLines([point(side * 178.5, -20), point(side * 56.5, -13), point(side * 56.5, 13), point(side * 178.5, 20)])
+            path.closeSubpath()
+        }
+        path.addLines([point(-23, 53.5), point(23, 53.5), point(32, 177), point(-32, 177)])
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The wheel, drawn live, inside a gauge showing its rotation range.
 struct WheelDrawing: View {
     var degrees: Double
     var rangeDegrees: Double
     var torque: Double
+
+    /// The gauge shows the G29's whole 900° on a 270° arc.
+    private static let fullRange = 900.0
+    private static let gaugeSweep = 270.0
+    private static let gaugeRadius: CGFloat = 262
 
     var body: some View {
         GeometryReader { geometry in
             let middle = CGPoint(x: geometry.size.width * 0.37, y: geometry.size.height * 0.56)
             ZStack {
                 Canvas { context, _ in
-                    draw(in: &context, at: middle)
+                    drawGauge(in: &context, at: middle)
+                }
+                frostedWheel
+                    .frame(width: 410, height: 410)
+                    .rotationEffect(.degrees(degrees))
+                    .position(middle)
+                Canvas { context, _ in
+                    drawWheel(in: &context, at: middle)
+                    drawMarker(in: &context, at: middle)
                 }
                 callout("Range", "\(Int(rangeDegrees))°", at: CGPoint(x: middle.x + 240, y: middle.y - 226))
-                callout("Torque", String(format: "%+.0f%%", torque * 100), at: CGPoint(x: 44, y: middle.y + 216))
-                    .frame(width: 120, alignment: .leading)
+                VStack(spacing: 2) {
+                    Text("Torque").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(String(format: "%+.0f%%", torque * 100)).font(.system(size: 19, weight: .semibold)).monospacedDigit()
+                }
+                .position(x: middle.x, y: middle.y + 250)
                 Text(angleText)
                     .font(.system(size: 28, weight: .semibold))
                     .monospacedDigit()
@@ -54,12 +95,20 @@ struct WheelDrawing: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Wheel at \(angleText), range \(Int(rangeDegrees)) degrees")
+        .accessibilityLabel("Wheel \(angleText), range \(Int(rangeDegrees)) degrees")
+    }
+
+    /// Frosted material, not Liquid Glass: glass smears across the window when
+    /// given a shape with holes in it, like a wheel.
+    private var frostedWheel: some View {
+        WheelShape()
+            .fill(.ultraThinMaterial)
+            .overlay(WheelShape().fill(.white.opacity(0.06)))
     }
 
     private var angleText: String {
         let whole = Int(abs(degrees).rounded())
-        if whole == 0 { return "Centred" }
+        if whole == 0 { return "0°" }
         return "\(whole)° \(degrees < 0 ? "left" : "right")"
     }
 
@@ -71,23 +120,67 @@ struct WheelDrawing: View {
         .position(x: point.x + 40, y: point.y)
     }
 
-    private func draw(in context: inout GraphicsContext, at middle: CGPoint) {
+    /// Where a wheel angle sits on the gauge, in degrees clockwise from the top.
+    private func gaugeAngle(_ wheelDegrees: Double) -> Double {
+        let limit = Self.fullRange / 2
+        return max(-limit, min(limit, wheelDegrees)) * Self.gaugeSweep / Self.fullRange
+    }
+
+    private func point(_ angle: Double, _ radius: CGFloat, around middle: CGPoint) -> CGPoint {
+        let radians = (angle - 90) * .pi / 180
+        return CGPoint(x: middle.x + radius * cos(radians), y: middle.y + radius * sin(radians))
+    }
+
+    private func arc(_ from: Double, _ to: Double, _ radius: CGFloat, around middle: CGPoint) -> Path {
+        var path = Path()
+        path.addArc(center: middle, radius: radius, startAngle: .degrees(from - 90), endAngle: .degrees(to - 90), clockwise: false)
+        return path
+    }
+
+    private func drawGauge(in context: inout GraphicsContext, at middle: CGPoint) {
+        let radius = Self.gaugeRadius
+        let half = Self.gaugeSweep / 2
+        let band = StrokeStyle(lineWidth: 6, lineCap: .round)
+        context.stroke(arc(-half, half, radius, around: middle), with: .style(.quaternary), style: band)
+
+        // The range the wheel is set to, between its two end stops.
+        let stop = gaugeAngle(rangeDegrees / 2)
+        context.stroke(arc(-stop, stop, radius, around: middle), with: .color(.accentColor.opacity(0.4)), style: band)
+        for angle in [-stop, stop] {
+            context.stroke(Path { path in
+                path.move(to: point(angle, radius - 14, around: middle))
+                path.addLine(to: point(angle, radius + 14, around: middle))
+            }, with: .color(.accentColor), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        }
+
+        // A tick every quarter turn of the wheel, longer at centre.
+        for turn in stride(from: -Self.fullRange / 2, through: Self.fullRange / 2, by: 90) {
+            let angle = gaugeAngle(turn)
+            let length: CGFloat = turn == 0 ? 14 : 7
+            context.stroke(Path { path in
+                path.move(to: point(angle, radius + 10, around: middle))
+                path.addLine(to: point(angle, radius + 10 + length, around: middle))
+            }, with: .style(.secondary), lineWidth: 1)
+        }
+
+        let label = Text("\(Int(rangeDegrees / 2))°").font(.system(size: 12)).monospacedDigit().foregroundColor(.secondary)
+        context.draw(label, at: point(-stop, radius + 34, around: middle))
+        context.draw(label, at: point(stop, radius + 34, around: middle))
+    }
+
+    private func drawMarker(in context: inout GraphicsContext, at middle: CGPoint) {
+        let centre = point(gaugeAngle(degrees), Self.gaugeRadius, around: middle)
+        let dot = Path(ellipseIn: CGRect(x: centre.x - 7, y: centre.y - 7, width: 14, height: 14))
+        context.fill(dot, with: .color(.accentColor))
+        context.stroke(dot, with: .color(.white), lineWidth: 2)
+    }
+
+    private func drawWheel(in context: inout GraphicsContext, at middle: CGPoint) {
         let ink = GraphicsContext.Shading.style(.primary)
         let ring = StrokeStyle(lineWidth: 1.5)
         func circle(_ radius: CGFloat) -> Path {
             Path(ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2))
         }
-
-        context.stroke(Path(ellipseIn: CGRect(x: middle.x - 262, y: middle.y - 262, width: 524, height: 524)),
-                       with: .style(.quaternary), style: StrokeStyle(lineWidth: 1, dash: [4, 5]))
-
-        // The sweep from centre to the wheel's angle, along the dashed circle.
-        var sweep = Path()
-        let shown = max(-180, min(180, degrees))
-        sweep.addArc(center: middle, radius: 262, startAngle: .degrees(-90), endAngle: .degrees(-90 + shown),
-                     clockwise: shown < 0)
-        context.stroke(sweep, with: .color(.accentColor), lineWidth: 2)
-
         var wheel = context
         wheel.translateBy(x: middle.x, y: middle.y)
         wheel.rotate(by: .degrees(degrees))
@@ -99,11 +192,11 @@ struct WheelDrawing: View {
             for side: CGFloat in [-1, 1] {
                 for offset: CGFloat in [-20, 20] {
                     path.move(to: CGPoint(x: side * 178, y: offset))
-                    path.addLine(to: CGPoint(x: side * 55, y: offset * 0.65))
+                    path.addLine(to: CGPoint(x: side * 56.5, y: offset * 0.65))
                 }
             }
             for offset: CGFloat in [-1, 1] {
-                path.move(to: CGPoint(x: offset * 23, y: 55))
+                path.move(to: CGPoint(x: offset * 23, y: 53.5))
                 path.addLine(to: CGPoint(x: offset * 32, y: 177))
             }
         }, with: ink, style: ring)

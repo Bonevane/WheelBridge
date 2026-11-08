@@ -3,7 +3,7 @@ import SwiftUI
 import WheelCore
 
 enum Screen: String, CaseIterable, Identifiable {
-    case wheel = "Wheel", force = "Force", games = "Games", health = "Health"
+    case wheel = "Wheel", force = "Force", bottles = "Bottles", health = "Health"
     var id: String { rawValue }
 }
 
@@ -64,7 +64,7 @@ struct MainView: View {
             WheelDrawing(degrees: model.steeringDegrees, rangeDegrees: model.rangeDegrees, torque: model.torque)
                 .padding(.trailing, -(inspectorWidth + 12))
         case .force: ForceScreen(model: model)
-        case .games: GamesScreen(model: model)
+        case .bottles: BottlesScreen(model: model)
         case .health: HealthScreen(model: model)
         }
     }
@@ -109,8 +109,6 @@ struct ForceScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Force").font(.system(size: 28, weight: .bold))
-            Text("What reaches the motor, after every limit.")
-                .font(.system(size: 15)).foregroundStyle(.secondary)
             TorqueTrace(samples: model.torqueHistory)
                 .frame(height: 170)
                 .padding(16)
@@ -124,7 +122,7 @@ struct ForceScreen: View {
             Toggle("Reverse force direction", isOn: $model.reversed)
                 .toggleStyle(.switch)
                 .font(.system(size: 13))
-            Text("Turn this on if the wheel pushes away from centre in corners.")
+            Text("Use if the wheel pulls away from center when cornering.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
@@ -143,13 +141,13 @@ struct ForceScreen: View {
 }
 
 /// Installs WheelBridge into bottles. One install covers every game in a bottle.
-struct GamesScreen: View {
+struct BottlesScreen: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Games").font(.system(size: 28, weight: .bold))
-            Text("Install once per bottle, and every game in it gets the wheel.")
+            Text("Bottles").font(.system(size: 28, weight: .bold))
+            Text("Installing covers every game in the bottle.")
                 .font(.system(size: 15)).foregroundStyle(.secondary)
             if let error = model.bottleError {
                 Text(error).font(.system(size: 13)).foregroundStyle(.red)
@@ -217,11 +215,7 @@ struct HealthScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(model.headline).font(.system(size: 28, weight: .bold))
-            Text(model.chain.contains { $0.state == .failed }
-                 ? "One thing needs fixing before the game can reach your wheel."
-                 : "Everything between your wheel and your game.")
-                .font(.system(size: 15)).foregroundStyle(.secondary)
-                .padding(.bottom, 34)
+                .padding(.bottom, 40)
             Checklist(links: model.chain, large: true)
             Spacer(minLength: 0)
         }
@@ -240,17 +234,16 @@ struct HealthInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let failed {
-                Text("Fix \(failed.name.lowercased())").font(.system(size: 17, weight: .semibold))
+                Text(failed.name).font(.system(size: 17, weight: .semibold))
                 Text(failed.fix ?? failed.detail)
                     .font(.system(size: 13))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("All clear").font(.system(size: 17, weight: .semibold))
-                Text("Nothing needs fixing.").font(.system(size: 13)).foregroundStyle(.secondary)
+                Text("No problems").font(.system(size: 17, weight: .semibold))
             }
             Divider()
-            fact("Loop", "\(model.status.loop_hz) Hz")
-            fact("Failed reports", "\(model.status.hid_failures)")
+            fact("Update rate", "\(model.status.loop_hz) Hz")
+            fact("Write errors", "\(model.status.hid_failures)")
             ForEach(model.bottles) { row in
                 fact(row.bottle.name, row.state == .installed ? "Installed" : row.state == .notInstalled ? "Not installed" : "Needs repair")
             }

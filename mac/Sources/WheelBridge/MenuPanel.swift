@@ -38,7 +38,7 @@ struct MenuPanel: View {
             .accessibilityElement(children: .combine)
             HStack(spacing: 8) {
                 Button(action: openWindow) {
-                    Text("Open Window").font(.system(size: 13)).foregroundStyle(.primary)
+                    Text("Open WheelBridge").font(.system(size: 13)).foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, minHeight: 30)
                 }
                 .glassButton()
